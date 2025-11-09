@@ -3,10 +3,12 @@ import java.awt.*;
 import java.awt.event.*;
 import java.sql.*;
 import java.util.ArrayList;
+import java.util.Timer;
+import java.util.TimerTask;
 
 public class OnlineExam extends JFrame implements ActionListener {
     JTextArea lblQuestion;
-    JLabel lblHeader, lblProgress;
+    JLabel lblHeader, lblProgress, lblTimer;
     JRadioButton optA, optB, optC, optD;
     JButton btnNext, btnPrev, btnFinish, btnReview;
     ButtonGroup optionsGroup;
@@ -21,16 +23,18 @@ public class OnlineExam extends JFrame implements ActionListener {
     String[] correctAnswers;
     String[] questionTexts;
 
+    Timer timer;
+    int timeRemaining = 15 * 60; // ⏳ 15 minutes in seconds
+
     // 🎨 Colors
     Color primary = new Color(59, 89, 182);
     Color secondary = new Color(92, 184, 92);
     Color background = new Color(245, 247, 250);
     Color cardColor = new Color(255, 255, 255);
 
-    // ---------- Constructor ----------
     public OnlineExam(String student) {
         studentName = student;
-        setTitle("🎓 Online Exam System");
+        setTitle("Online Exam System");
         setDefaultCloseOperation(EXIT_ON_CLOSE);
         setLayout(new BorderLayout());
         setExtendedState(JFrame.MAXIMIZED_BOTH);
@@ -46,12 +50,20 @@ public class OnlineExam extends JFrame implements ActionListener {
                 g2d.fillRect(0, 0, getWidth(), getHeight());
             }
         };
-        headerPanel.setLayout(new FlowLayout(FlowLayout.CENTER, 10, 20));
-        lblHeader = new JLabel("Welcome, " + studentName + " 👋");
+        headerPanel.setLayout(new BorderLayout());
+        headerPanel.setPreferredSize(new Dimension(600, 80));
+
+        lblHeader = new JLabel("Welcome, " + studentName + " 👋", SwingConstants.CENTER);
         lblHeader.setFont(new Font("SansSerif", Font.BOLD, 24));
         lblHeader.setForeground(Color.WHITE);
-        headerPanel.add(lblHeader);
-        headerPanel.setPreferredSize(new Dimension(600, 80));
+        headerPanel.add(lblHeader, BorderLayout.CENTER);
+
+        // Timer label (right side)
+        lblTimer = new JLabel("⏰ 15:00", SwingConstants.RIGHT);
+        lblTimer.setFont(new Font("Segoe UI", Font.BOLD, 22));
+        lblTimer.setForeground(Color.WHITE);
+        lblTimer.setBorder(BorderFactory.createEmptyBorder(0, 0, 0, 20));
+        headerPanel.add(lblTimer, BorderLayout.EAST);
 
         // ---------- Side Panel ----------
         sidePanel = new JPanel();
@@ -72,7 +84,7 @@ public class OnlineExam extends JFrame implements ActionListener {
         mainPanel.setLayout(new BoxLayout(mainPanel, BoxLayout.Y_AXIS));
         mainPanel.setBorder(BorderFactory.createEmptyBorder(30, 150, 10, 150));
 
-        // ---------- Question ----------
+        // ---------- Question Area ----------
         lblQuestion = new JTextArea();
         lblQuestion.setFont(new Font("Segoe UI", Font.BOLD, 22));
         lblQuestion.setForeground(primary);
@@ -82,13 +94,10 @@ public class OnlineExam extends JFrame implements ActionListener {
         lblQuestion.setEditable(false);
         lblQuestion.setFocusable(false);
         lblQuestion.setAlignmentX(Component.LEFT_ALIGNMENT);
-        lblQuestion.setBorder(BorderFactory.createEmptyBorder(0, 0, 5, 0));
         lblQuestion.setMaximumSize(new Dimension(Integer.MAX_VALUE, 90));
-        lblQuestion.setPreferredSize(new Dimension(1000, 80));
 
         // ---------- Options ----------
-        optionsPanel = new JPanel();
-        optionsPanel.setLayout(new GridLayout(4, 1, 10, 10));
+        optionsPanel = new JPanel(new GridLayout(4, 1, 10, 10));
         optionsPanel.setBackground(background);
         optionsPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
 
@@ -117,10 +126,10 @@ public class OnlineExam extends JFrame implements ActionListener {
         bottomPanel = new JPanel(new FlowLayout(FlowLayout.CENTER, 25, 15));
         bottomPanel.setBackground(background);
 
-        btnPrev = new JButton("⬅️ Previous");
-        btnNext = new JButton("Next ➡️");
-        btnFinish = new JButton("🏁 Finish Exam");
-        btnReview = new JButton("📋 Review Answers");
+        btnPrev = new JButton("Previous");
+        btnNext = new JButton("Next");
+        btnFinish = new JButton("Submit");
+        btnReview = new JButton("Review Answers");
 
         JButton[] btns = {btnPrev, btnNext, btnFinish, btnReview};
         for (JButton b : btns) {
@@ -150,7 +159,7 @@ public class OnlineExam extends JFrame implements ActionListener {
         add(sidePanel, BorderLayout.EAST);
         add(bottomPanel, BorderLayout.SOUTH);
 
-        // ---------- Load Database ----------
+        // ---------- Load Questions ----------
         try {
             conn = DBConnection.getConnection();
             Statement st = conn.createStatement(ResultSet.TYPE_SCROLL_INSENSITIVE, ResultSet.CONCUR_READ_ONLY);
@@ -174,6 +183,7 @@ public class OnlineExam extends JFrame implements ActionListener {
             rs.first();
             showQuestion();
             updateProgress();
+            startTimer(); // ⏳ Start countdown when exam begins
 
         } catch (Exception e) {
             JOptionPane.showMessageDialog(this, "Database Error: " + e.getMessage());
@@ -182,24 +192,49 @@ public class OnlineExam extends JFrame implements ActionListener {
         setVisible(true);
     }
 
-    private String rsSafe(ResultSet rs, String col) {
-        try {
-            return rs.getString(col);
-        } catch (Exception e) {
-            return "";
-        }
+    // ⏳ TIMER FUNCTION
+    void startTimer() {
+        timer = new Timer();
+        timer.scheduleAtFixedRate(new TimerTask() {
+            @Override
+            public void run() {
+                SwingUtilities.invokeLater(() -> {
+                    if (timeRemaining <= 0) {
+                        timer.cancel();
+                        JOptionPane.showMessageDialog(null, "⏰ Time’s up! Your exam will now be submitted.");
+                        showResults();
+                        dispose();
+                        return;
+                    }
+                    int minutes = timeRemaining / 60;
+                    int seconds = timeRemaining % 60;
+                    lblTimer.setText(String.format("%02d:%02d", minutes, seconds));
+
+                    // Change color when 2 minutes left
+                    if (timeRemaining <= 120) lblTimer.setForeground(Color.YELLOW);
+                    if (timeRemaining <= 60) lblTimer.setForeground(Color.RED);
+
+                    timeRemaining--;
+                });
+            }
+        }, 0, 1000);
     }
 
     void showQuestion() throws SQLException {
-        optionsGroup.clearSelection();
+        if (qCount >= totalQuestions) {
+            JOptionPane.showMessageDialog(this, "🎉 You’ve finished all the questions!");
+            btnNext.setEnabled(false);
+            return;
+        }
 
+        optionsGroup.clearSelection();
         lblQuestion.setText(questionTexts[qCount]);
 
         rs.absolute(qCount + 1);
-        optA.setText("A. " + rsSafe(rs, "option_a"));
-        optB.setText("B. " + rsSafe(rs, "option_b"));
-        optC.setText("C. " + rsSafe(rs, "option_c"));
-        optD.setText("D. " + rsSafe(rs, "option_d"));
+        optA.setText("A. " + rs.getString("option_a"));
+        optB.setText("B. " + rs.getString("option_b"));
+        optC.setText("C. " + rs.getString("option_c"));
+        optD.setText("D. " + rs.getString("option_d"));
 
         String saved = userAnswers[qCount];
         if (saved != null) {
@@ -228,20 +263,18 @@ public class OnlineExam extends JFrame implements ActionListener {
         for (String a : userAnswers) if (a != null) answered++;
         int remaining = totalQuestions - answered;
 
-        lblProgress.setText(
-            "<html><div style='width:220px; text-align:left; font-family:Segoe UI; line-height:1.6; white-space:nowrap;'>" +
-            "<b>📊 Progress</b><br>" +
-            "Answered: " + answered + "<br>" +
-            "Remaining: " + remaining + "<br><br>" +
-            "<span style='color:#3b59b6;'>Question " + (qCount + 1) + " / " + totalQuestions + "</span>" +
-            "</div></html>"
-        );
+        lblProgress.setText("<html><div style='text-align:center; width:200px;'>"
+                + "<b>📊 Progress</b><br>"
+                + "Answered: " + answered + "<br>"
+                + "Remaining: " + remaining + "<br>"
+                + "<span style='white-space:nowrap; color:#3b59b6;'>Question "
+                + (qCount + 1) + " / " + totalQuestions + "</span>"
+                + "</div></html>");
     }
 
-    // ---------- REVIEW BEFORE FINISH ----------
     void showReview() {
         int answered = 0, unanswered = 0;
-        StringBuilder summary = new StringBuilder("📋 Review Your Progress\n\n");
+        StringBuilder summary = new StringBuilder("Review Your Progress\n\n");
 
         for (int i = 0; i < totalQuestions; i++) {
             if (userAnswers[i] == null) {
@@ -254,29 +287,27 @@ public class OnlineExam extends JFrame implements ActionListener {
         }
 
         summary.append("\nTotal Answered: ").append(answered)
-               .append("\nTotal Unanswered: ").append(unanswered);
+                .append("\nTotal Unanswered: ").append(unanswered);
 
         JTextArea textArea = new JTextArea(summary.toString());
         textArea.setFont(new Font("Segoe UI", Font.PLAIN, 16));
         textArea.setEditable(false);
-        textArea.setWrapStyleWord(true);
-        textArea.setLineWrap(true);
         JScrollPane scrollPane = new JScrollPane(textArea);
         scrollPane.setPreferredSize(new Dimension(500, 400));
 
-        JOptionPane.showMessageDialog(this, scrollPane, "📋 Review Progress", JOptionPane.INFORMATION_MESSAGE);
+        JOptionPane.showMessageDialog(this, scrollPane, "Review Progress", JOptionPane.INFORMATION_MESSAGE);
     }
 
-    // ---------- SHOW RESULTS AFTER FINISH ----------
     void showResults() {
+        if (timer != null) timer.cancel(); // ⏹ stop timer on finish
+
         int correct = 0, wrong = 0;
         ArrayList<String> wrongDetails = new ArrayList<>();
 
         for (int i = 0; i < totalQuestions; i++) {
             if (userAnswers[i] == null) continue;
-            if (userAnswers[i].equalsIgnoreCase(correctAnswers[i])) {
-                correct++;
-            } else {
+            if (userAnswers[i].equalsIgnoreCase(correctAnswers[i])) correct++;
+            else {
                 wrong++;
                 wrongDetails.add("❌ Q" + (i + 1) + ": " + questionTexts[i] +
                         "\nYour Answer: " + userAnswers[i] +
@@ -285,10 +316,10 @@ public class OnlineExam extends JFrame implements ActionListener {
         }
 
         StringBuilder result = new StringBuilder();
-        result.append("🎯 Exam Complete!\n\n");
-        result.append("Total Questions: ").append(totalQuestions).append("\n");
-        result.append("Correct Answers: ").append(correct).append("\n");
-        result.append("Wrong Answers: ").append(wrong).append("\n\n");
+        result.append("🎯 Exam Complete!\n\n")
+                .append("Total Questions: ").append(totalQuestions).append("\n")
+                .append("Correct Answers: ").append(correct).append("\n")
+                .append("Wrong Answers: ").append(wrong).append("\n\n");
 
         if (!wrongDetails.isEmpty()) {
             result.append("Here are the ones you missed:\n\n");
@@ -298,34 +329,24 @@ public class OnlineExam extends JFrame implements ActionListener {
         JTextArea textArea = new JTextArea(result.toString());
         textArea.setFont(new Font("Segoe UI", Font.PLAIN, 16));
         textArea.setEditable(false);
-        textArea.setWrapStyleWord(true);
-        textArea.setLineWrap(true);
         JScrollPane scrollPane = new JScrollPane(textArea);
         scrollPane.setPreferredSize(new Dimension(650, 450));
 
-        JOptionPane.showMessageDialog(this, scrollPane, "📊 Exam Results", JOptionPane.INFORMATION_MESSAGE);
+        JOptionPane.showMessageDialog(this, scrollPane, "Exam Results", JOptionPane.INFORMATION_MESSAGE);
     }
 
-    // ---------- Button Actions ----------
     @Override
     public void actionPerformed(ActionEvent e) {
         try {
             if (e.getSource() == btnNext) {
                 recordAnswer();
-                if (qCount < totalQuestions - 1) {
-                    qCount++;
-                    showQuestion();
-                } else {
-                    JOptionPane.showMessageDialog(this, "🎉 You’ve reached the last question!");
-                    btnNext.setEnabled(false);
-                }
+                qCount++;
+                showQuestion();
             } else if (e.getSource() == btnPrev) {
                 recordAnswer();
-                if (qCount > 0) {
-                    qCount--;
-                    showQuestion();
-                    btnNext.setEnabled(true);
-                }
+                if (qCount > 0) qCount--;
+                showQuestion();
+                btnNext.setEnabled(true);
             } else if (e.getSource() == btnReview) {
                 recordAnswer();
                 showReview();
@@ -338,7 +359,6 @@ public class OnlineExam extends JFrame implements ActionListener {
         }
     }
 
-    // ---------- Welcome ----------
     public static void main(String[] args) {
         JFrame welcome = new JFrame("🎓 Online Exam System");
         welcome.setExtendedState(JFrame.MAXIMIZED_BOTH);
